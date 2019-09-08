@@ -3,13 +3,11 @@ from pyspark.sql.types import StructField
 from pyspark.sql.types import StructType
 from pyspark.sql.types import StringType 
 from pyspark.sql.types import IntegerType 
-from pyspark.sql.functions import desc 
+from pyspark.sql.functions import desc
+import matplotlib.pyplot as plt 
+
 
 def main(spark):
-    sc = spark.sparkContext
-    data = sc.textFile("C:/sparksqlucs/HVAC.csv")
-    header = data.first()
-    dataWithoutHeader = data.filter(lambda row : row != header)
     fields=[StructField("Date", StringType(), True),\
             StructField("Time", StringType(), True),\
             StructField("TargetTemp", IntegerType(), True),\
@@ -17,23 +15,18 @@ def main(spark):
             StructField("System", IntegerType(), True),\
             StructField("SystemAge", IntegerType(), True),\
             StructField("BuildingId", IntegerType(), True)]
-    hvac = dataWithoutHeader.map(lambda x : x.split(",")).map(lambda p: (p[0], p[1],int(p[2]),int(p[3]),int(p[4]),int(p[5]),int(p[6])))
     schema = StructType(fields)
-    hvacdf = spark.createDataFrame(hvac,schema)
+    hvacdf = spark.read.format("csv").option("header","true").schema(schema).load("c:\\sparksqlucs\\HVAC.csv")
     hvacdf.registerTempTable("HVAC")
     hvacWithFlag1 = spark.sql("select *,IF((targettemp - actualtemp) > 5, '1', IF((targettemp - actualtemp) < -5, '1', 0)) AS tempchange from HVAC")
     hvacWithFlag1.registerTempTable("HVAC1")
-    data2 = sc.textFile("C:/sparksqlucs/building.csv")
-    header1 = data2.first()
-    data3 = data2.filter(lambda row : row != header1)
     Buildingfields=[StructField("BuildingID", IntegerType(), True),\
                     StructField("BuildingMgr", StringType(), True),\
                     StructField("BuildingAge", IntegerType(), True),\
                     StructField("HVACproduct", StringType(), True),\
                     StructField("Country", StringType(), True)]
-    building = data3.map(lambda x : x.split(",")).map(lambda p: (int(p[0]), p[1],int(p[2]),p[3],p[4]))
     Buildingschema = StructType(Buildingfields)
-    Buildingdf = spark.createDataFrame(building,Buildingschema)
+    Buildingdf = spark.read.format("csv").option("header","true").schema(Buildingschema).load("c:\\sparksqlucs\\building.csv")
     Buildingdf.registerTempTable("building")
     buildingWithHvac = spark.sql("select h.*, b.country, b.hvacproduct from building b join hvac1 h on b.BuildingId = h.Buildingid")
     buildingWithHvac.show()
@@ -52,9 +45,15 @@ def main(spark):
     (PARTITION BY country ORDER BY SystemAge asc) as rank \
     FROM buildingWithHvacDetails ) tmp WHERE rank <= 2 ")
     Lowest2SystemAgeCountryWise.distinct().show()
+    CountryLabel=countrieswithTempchangeOften.rdd.map(lambda x : x["country"]).collect()
+    Count=countrieswithTempchangeOften.rdd.map(lambda x : x["count"]).collect()
+    #creating a pie chart using matplot to visualize the final outcome (countries with frequent temperature  changes)
+    explode = (0.3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.3)
+    plt.pie(Count, labels=CountryLabel,explode=explode,autopct= lambda p : '{:.2f}% \n({:d})'.format(p,int(round(p * sum(Count)/100))))
+    plt.show()
+    
 if __name__ == "__main__" :
     spark = SparkSession.builder.appName("Temperature Change across world")\
     .getOrCreate()
     main(spark)
-    
     
